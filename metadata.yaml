@@ -2,9 +2,12 @@ name: what_to_eat
 display_name: 吃什么
 desc: 一个实用的吃什么菜单插件，支持菜品管理、随机推荐、导出导入与AI Agent接口，支持WebUI设置页面。
 short_desc: 吃什么菜单 - 随机推荐、菜单管理、数据导入导出
-version: "1.2.0"
-authors: StarryLan
+version: v1.2.0
+author: StarryLan
 repo: https://github.com/Venti-XingLanCiJiang-BiLiBiLi/astrbot_plugin_what_to_eat
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.16"
 help: |
   添加菜单 [菜名1,菜名2,...] — 添加菜品到菜单
   菜单统计 — 查看菜单中菜品数量
