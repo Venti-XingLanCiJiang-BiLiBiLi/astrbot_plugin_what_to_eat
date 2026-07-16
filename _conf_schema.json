@@ -1,0 +1,65 @@
+{
+  "meal_max_items": {
+    "description": "群菜单最大道数",
+    "type": "int",
+    "default": 500,
+    "hint": "每个群菜单最多存放的菜品数量上限。"
+  },
+  "meal_add_keywords": {
+    "description": "加菜单触发关键词",
+    "type": "list",
+    "default": ["添加菜单", "加菜", "add", "addmeal", "addmeals"],
+    "hint": "触发菜单添加动作的关键词。"
+  },
+  "meal_del_keywords": {
+    "description": "删菜单触发关键词",
+    "type": "list",
+    "default": ["删除菜品", "删菜", "del", "delmeal", "deletemeal"],
+    "hint": "触发菜单删除动作的关键词。"
+  },
+  "meal_delall_keywords": {
+    "description": "加菜单触发关键词",
+    "type": "list",
+    "default": ["deleteall", "清空菜单", "delall", "cleanup", "cleanmeals"],
+    "hint": "触发菜单清空动作的关键词。"
+  },
+  "meal_eat_keywords": {
+    "description": "吃啥触发关键词",
+    "type": "list",
+    "default": ["吃啥", "吃什么", "今天吃啥", "今天吃什么", "吃点啥"],
+    "hint": "触发随机推荐单道菜的关键词。"
+  },
+  "meal_banquet_keywords": {
+    "description": "摆酒席触发关键词",
+    "type": "list",
+    "default": ["摆酒席", "开席", "整一桌", "来一桌", "上菜"],
+    "hint": "触发随机抽取多道菜的关键词。"
+  },
+  "meal_banquet_count": {
+    "description": "摆酒席触发次数上限",
+    "type": "int",
+    "default": 5,
+    "hint": "5 分钟内最多触发多少次摆酒席。超过后冷却 meal_banquet_cooldown_minutes 分钟。"
+  },
+  "meal_banquet_cooldown_minutes": {
+    "description": "摆酒席冷却分钟数",
+    "type": "int",
+    "default": 5,
+    "hint": "触发次数超限后，冷却多少分钟。"
+  },
+  "feast_count": {
+    "type": "int",
+    "default": 5,
+    "description": "开席命令推荐的菜品数量"
+  },
+  "random_reply_template": {
+    "type": "string",
+    "default": "今天吃{dish}喵~",
+    "description": "随机推荐回复模板，使用 {dish} 占位符"
+  },
+  "feast_reply_template": {
+    "type": "string",
+    "default": "🍽️ 今日宴席菜单：{dishes}",
+    "description": "开席回复模板，使用 {dishes} 占位符"
+  }
+}

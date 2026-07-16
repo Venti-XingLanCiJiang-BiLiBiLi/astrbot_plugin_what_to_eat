@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>吃什么菜单</title>
+<style>
+body { font-family: system-ui; padding: 20px; max-width: 700px; margin: 0 auto; background: var(--bg); color: var(--text); }
+:root { --bg: #fff; --text: #333; --border: #ddd; --primary: #3b82f6; --success: #22c55e; --danger: #ef4444; }
+[data-theme="dark"] { --bg: #1a1a1a; --text: #e0e0e0; --border: #444; }
+h1 { margin-bottom: 15px; }
+#debug { background: #eee; padding: 10px; margin: 10px 0; font-size: 12px; font-family: monospace; white-space: pre-wrap; max-height: 200px; overflow-y: auto; display: block; }
+[data-theme="dark"] #debug { background: #333; }
+.section { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+.section h2 { margin: 0 0 10px 0; font-size: 1rem; }
+.stats { display: flex; gap: 15px; margin-bottom: 15px; }
+.stat { background: #f5f5f5; padding: 12px 20px; border-radius: 8px; text-align: center; flex: 1; }
+[data-theme="dark"] .stat { background: #333; }
+.stat .val { font-size: 28px; font-weight: bold; color: var(--primary); }
+.stat .lab { font-size: 12px; color: #888; margin-top: 4px; }
+input, textarea, select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); box-sizing: border-box; font-size: 14px; }
+textarea { min-height: 80px; resize: vertical; }
+.btn { padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; color: white; }
+.btn-primary { background: var(--primary); }
+.btn-success { background: var(--success); }
+.btn-danger { background: var(--danger); }
+.btn:hover { opacity: 0.9; }
+.menu-list { border: 1px solid var(--border); border-radius: 6px; max-height: 250px; overflow-y: auto; }
+.menu-item { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.menu-item:last-child { border-bottom: none; }
+.menu-item:hover { background: #f9f9f9; }
+[data-theme="dark"] .menu-item:hover { background: #2a2a2a; }
+.menu-item .name { flex: 1; }
+.menu-item .del { background: var(--danger); color: white; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.menu-empty { padding: 30px; text-align: center; color: #888; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.row .btn { flex-shrink: 0; }
+.scope-box { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.scope-box select { width: auto; min-width: 150px; margin-bottom: 0; }
+.scope-box input { width: 150px; margin-bottom: 0; }
+.scope-box .current-info { font-size: 12px; color: #888; margin-left: 10px; }
+[data-theme="dark"] .scope-box .current-info { color: #aaa; }
+</style>
+</head>
+<body>
+<h1>🍽️ 吃什么菜单 - 设置</h1>
+<div id="debug" style="display:block">[DEBUG] 页面开始加载</div>
+
+<h2>统计</h2>
+<div class="stats">
+    <div class="stat"><div class="val" id="count">-</div><div class="lab">菜品数量</div></div>
+    <div class="stat"><div class="val" id="scopeDisplay">默认</div><div class="lab">当前会话</div></div>
+</div>
+
+<div class="section">
+    <h2>📋 会话菜单管理</h2>
+    <div class="scope-box">
+        <select id="scopeSelect">
+            <option value="default" selected>默认菜单</option>
+            <option value="group">按群聊管理</option>
+            <option value="private">按私聊管理</option>
+        </select>
+        <input type="text" id="targetIdInput" placeholder="群号/用户ID" disabled>
+        <button class="btn btn-primary" id="btnLoad">加载</button>
+    </div>
+    
+    <input type="text" id="dishInput" placeholder="输入菜品名称，多个用逗号分隔">
+    <div class="row">
+        <button class="btn btn-primary" id="btnAdd">添加菜品</button>
+        <button class="btn btn-danger" id="btnClear">清空菜单</button>
+    </div>
+    <div class="menu-list" id="menuList"><div class="menu-empty">点击"加载"按钮加载菜单</div></div>
+</div>
+
+<div class="section">
+    <h2>💾 导入 / 导出</h2>
+    <textarea id="importText" placeholder="JSON数组或逗号分隔"></textarea>
+    <div class="row"><button class="btn btn-success" id="btnImport">导入</button></div>
+    <textarea id="exportText" readonly placeholder="点击导出按钮后显示" style="margin-top:10px"></textarea>
+    <div class="row" style="margin-top:8px">
+        <button class="btn btn-primary" id="btnExport">导出</button>
+        <button class="btn btn-success" id="btnCopy">复制</button>
+    </div>
+</div>
+
+<div class="section">
+    <h2>🎲 随机推荐</h2>
+    <div class="row">
+        <button class="btn btn-primary" id="btnRandom">随机一道</button>
+        <button class="btn btn-success" id="btnFeast">开席推荐</button>
+    </div>
+</div>
+
+<script src="/api/plugin/page/bridge-sdk.js"></script>
+<script>
+var bridge;
+
+function log(msg) {
+    console.log('[what_to_eat]', msg);
+    var el = document.getElementById('debug');
+    var time = new Date().toLocaleTimeString();
+    el.innerHTML += '\n[' + time + '] ' + msg;
+    el.scrollTop = el.scrollHeight;
+}
+
+function toast(msg, type) {
+    var el = document.createElement('div');
+    el.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:12px 20px;background:' + (type === 'error' ? '#ef4444' : '#22c55e') + ';color:white;border-radius:6px;z-index:9999;font-size:14px';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(function() { el.remove(); }, 3500);
+}
+
+function apiPostWithTimeout(endpoint) {
+    // 透传所有参数给 bridge.apiPost，只包裹超时逻辑，不改变参数结构
+    var args = Array.prototype.slice.call(arguments);
+    var timeoutMs = typeof args[args.length - 1] === 'number' ? args.pop() : 10000;
+    return new Promise(function(resolve, reject) {
+        var timedOut = false;
+        var timer = setTimeout(function() {
+            timedOut = true;
+            reject(new Error('请求超时'));
+        }, timeoutMs);
+        bridge.apiPost.apply(bridge, args).then(function(r) {
+            if (!timedOut) {
+                clearTimeout(timer);
+                resolve(r);
+            }
+        }).catch(function(e) {
+            if (!timedOut) {
+                clearTimeout(timer);
+                reject(e);
+            }
+        });
+    });
+}
+
+function apiGetWithTimeout(endpoint) {
+    // 透传所有参数给 bridge.apiGet，只包裹超时逻辑，不改变参数结构
+    var args = Array.prototype.slice.call(arguments);
+    var timeoutMs = typeof args[args.length - 1] === 'number' ? args.pop() : 10000;
+    return new Promise(function(resolve, reject) {
+        var timedOut = false;
+        var timer = setTimeout(function() {
+            timedOut = true;
+            reject(new Error('请求超时'));
+        }, timeoutMs);
+        bridge.apiGet.apply(bridge, args).then(function(r) {
+            if (!timedOut) {
+                clearTimeout(timer);
+                resolve(r);
+            }
+        }).catch(function(e) {
+            if (!timedOut) {
+                clearTimeout(timer);
+                reject(e);
+            }
+        });
+    });
+}
+
+function escapeHtml(s) {
+    if (!s) return '';
+    var div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+function renderMenu(menu) {
+    var el = document.getElementById('menuList');
+    if (!menu || menu.length === 0) {
+        el.innerHTML = '<div class="menu-empty">菜单为空</div>';
+        return;
+    }
+    var html = '';
+    for (var i = 0; i < menu.length; i++) {
+        var name = escapeHtml(menu[i]);
+        html += '<div class="menu-item"><span class="name">' + name + '</span><button class="del" data-name="' + name.replace(/"/g, '&quot;') + '">删除</button></div>';
+    }
+    el.innerHTML = html;
+}
+
+function updateScopeDisplay(scope, targetId) {
+    var display = scope === 'default' ? '默认' : (scope === 'group' ? '群:' : '私聊:') + (targetId || '');
+    document.getElementById('scopeDisplay').textContent = display;
+}
+
+function getScopeAndTarget() {
+    var scope = document.getElementById('scopeSelect').value;
+    var targetId = document.getElementById('targetIdInput').value.trim();
+    log('[getScopeAndTarget] scope=' + scope + ', targetId=' + targetId);
+    return { scope: scope, targetId: targetId };
+}
+
+function buildApiParams(scope, targetId) {
+    var params = {};
+    if (scope !== 'default') {
+        params.scope = scope;
+        if (targetId) {
+            params.target_id = targetId;
+        }
+    }
+    log('[buildApiParams] params=' + JSON.stringify(params));
+    return params;
+}
+
+async function loadMenu() {
+    log('[loadMenu] 开始');
+    
+    var info = getScopeAndTarget();
+    var scope = info.scope;
+    var targetId = info.targetId;
+    
+    log('[loadMenu] 解析后: scope=' + scope + ', targetId=' + targetId);
+    
+    if (scope !== 'default' && !targetId) {
+        toast('请输入群号或用户ID', 'error');
+        log('[loadMenu] 错误: 未输入ID');
+        return;
+    }
+    
+    var params = buildApiParams(scope, targetId);
+    
+    try {
+        log('[loadMenu] 发送请求, params=' + JSON.stringify(params));
+        var data = await apiGetWithTimeout('menu', params);
+        log('[loadMenu] 收到响应: ' + JSON.stringify(data));
+        
+        var menu = data.menu || [];
+        renderMenu(menu);
+        document.getElementById('count').textContent = data.count || 0;
+        updateScopeDisplay(scope, targetId);
+        toast('加载成功: ' + (data.count || 0) + ' 个菜品', 'success');
+        log('[loadMenu] 完成');
+    } catch(e) {
+        log('[loadMenu] 错误: ' + e.message);
+        toast('加载失败: ' + e.message, 'error');
+    }
+}
+
+async function doAdd() {
+    log('[doAdd] 开始');
+    
+    var info = getScopeAndTarget();
+    var scope = info.scope;
+    var targetId = info.targetId;
+    
+    var val = document.getElementById('dishInput').value.trim();
+    log('[doAdd] 输入值: ' + val);
+    
+    if (!val) { toast('请输入菜品', 'error'); return; }
+    if (scope !== 'default' && !targetId) { toast('请先加载菜单', 'error'); return; }
+    
+    var dishes = val.split(/[,，]/).map(function(d) { return d.trim(); }).filter(function(d) { return d; });
+    log('[doAdd] 解析后菜品: ' + JSON.stringify(dishes));
+    
+    try {
+        var params = buildApiParams(scope, targetId);
+        log('[doAdd] 发送: payload=' + JSON.stringify({dishes: dishes}) + ', params=' + JSON.stringify(params));
+        var r = await apiPostWithTimeout('menu/add', { dishes: dishes }, params);
+        log('[doAdd] 响应: ' + JSON.stringify(r));
+        
+        var msg = '添加 ' + (r.added ? r.added.length : 0) + ' 个';
+        if (r.skipped && r.skipped.length) msg += '，跳过 ' + r.skipped.length;
+        toast(msg, 'success');
+        document.getElementById('dishInput').value = '';
+        loadMenu();
+    } catch(e) {
+        log('[doAdd] 错误: ' + e.message);
+        toast('添加失败', 'error');
+    }
+}
+
+async function doDelete(name) {
+    log('[doDelete] 删除: ' + name);
+    if (!confirm('删除 "' + name + '"？')) return;
+    
+    var info = getScopeAndTarget();
+    try {
+        var params = buildApiParams(info.scope, info.targetId);
+        var r = await apiPostWithTimeout('menu/delete', { dish: name }, params);
+        log('[doDelete] 响应: ' + JSON.stringify(r));
+        if (r && r.success === true) {
+            toast('已删除', 'success');
+            loadMenu();
+        } else {
+            toast('删除失败' + (r && r.error ? ': ' + r.error : ''), 'error');
+        }
+    } catch(e) {
+        log('[doDelete] 错误: ' + e.message);
+        toast('删除失败: ' + e.message, 'error');
+    }
+}
+
+async function doClear() {
+    if (!confirm('清空当前菜单？')) return;
+    if (!confirm('确认！不可恢复！')) return;
+    
+    var info = getScopeAndTarget();
+    try {
+        var params = buildApiParams(info.scope, info.targetId);
+        var r = await apiPostWithTimeout('menu/clear', {}, params);
+        if (r && r.success === true) {
+            toast('已清空', 'success');
+            loadMenu();
+        } else {
+            toast('清空失败', 'error');
+        }
+    } catch(e) {
+        toast('清空失败', 'error');
+    }
+}
+
+async function doImport() {
+    var val = document.getElementById('importText').value.trim();
+    if (!val) { toast('请输入内容', 'error'); return; }
+    
+    var info = getScopeAndTarget();
+    try {
+        var params = buildApiParams(info.scope, info.targetId);
+        var r = await apiPostWithTimeout('menu/import', { data: val }, params);
+        toast('导入 ' + (r.added ? r.added.length : 0) + ' 个', 'success');
+        document.getElementById('importText').value = '';
+        loadMenu();
+    } catch(e) {
+        toast('导入失败', 'error');
+    }
+}
+
+async function doExport() {
+    var info = getScopeAndTarget();
+    try {
+        var params = buildApiParams(info.scope, info.targetId);
+        var data = await apiGetWithTimeout('menu/export', params);
+        document.getElementById('exportText').value = data.json || '[]';
+        toast('已导出', 'success');
+    } catch(e) {
+        toast('导出失败', 'error');
+    }
+}
+
+function doCopy() {
+    var el = document.getElementById('exportText');
+    if (!el.value) { toast('请先导出', 'error'); return; }
+    el.select();
+    document.execCommand('copy');
+    toast('已复制', 'success');
+}
+
+async function doRandom() {
+    var info = getScopeAndTarget();
+    try {
+        var params = buildApiParams(info.scope, info.targetId);
+        var data = await apiGetWithTimeout('menu/random', { count: 1 }, params);
+        if (data.dish) toast('推荐: ' + data.dish, 'success');
+        else toast('菜单为空', 'error');
+    } catch(e) {
+        toast('推荐失败', 'error');
+    }
+}
+
+async function doFeast() {
+    var info = getScopeAndTarget();
+    try {
+        var params = buildApiParams(info.scope, info.targetId);
+        var data = await apiGetWithTimeout('menu/random', { count: 5 }, params);
+        if (data.dishes && data.dishes.length > 0) toast('开席: ' + data.dishes.join(' | '), 'success');
+        else toast('菜品不足', 'error');
+    } catch(e) {
+        toast('推荐失败', 'error');
+    }
+}
+
+// 事件绑定
+document.getElementById('btnLoad').onclick = loadMenu;
+document.getElementById('btnAdd').onclick = doAdd;
+document.getElementById('btnClear').onclick = doClear;
+document.getElementById('btnImport').onclick = doImport;
+document.getElementById('btnExport').onclick = doExport;
+document.getElementById('btnCopy').onclick = doCopy;
+document.getElementById('btnRandom').onclick = doRandom;
+document.getElementById('btnFeast').onclick = doFeast;
+
+document.getElementById('scopeSelect').onchange = function() {
+    var scope = this.value;
+    var targetInput = document.getElementById('targetIdInput');
+    if (scope === 'default') {
+        targetInput.disabled = true;
+        targetInput.value = '';
+    } else {
+        targetInput.disabled = false;
+        targetInput.placeholder = scope === 'group' ? '输入群号' : '输入用户ID';
+    }
+};
+
+document.getElementById('dishInput').onkeydown = function(e) { if (e.key === 'Enter') doAdd(); };
+document.getElementById('targetIdInput').onkeydown = function(e) { if (e.key === 'Enter') loadMenu(); };
+
+document.getElementById('menuList').onclick = function(e) {
+    if (e.target && e.target.classList.contains('del')) {
+        var name = e.target.getAttribute('data-name');
+        if (name) doDelete(name);
+    }
+};
+
+// 初始化
+log('[初始化] 开始');
+bridge = window.AstrBotPluginPage;
+log('[初始化] bridge对象: ' + (bridge ? '存在' : '不存在'));
+
+bridge.ready().then(function(ctx) {
+    log('[初始化] Bridge就绪, ctx=' + JSON.stringify(ctx));
+    loadMenu();
+}).catch(function(e) {
+    log('[初始化] Bridge失败: ' + e.message);
+    toast('初始化失败', 'error');
+});
+</script>
+</body>
+</html>

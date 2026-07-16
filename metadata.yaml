@@ -1,0 +1,19 @@
+name: what_to_eat
+version: "1.2.0"
+authors: [StarryLanMusic]
+desc: 一个实用的吃什么菜单插件，支持菜品管理、随机推荐、导出导入与AI Agent接口，支持WebUI设置页面。
+short_desc: 吃什么菜单 - 随机推荐、菜单管理、数据导入导出
+help: |
+  添加菜单 [菜名1,菜名2,...] — 添加菜品到菜单
+  菜单统计 — 查看菜单中菜品数量
+  删除菜品 [菜名] — 从菜单删除指定菜品
+  吃什么 — 随机推荐一道菜
+  开席 — 随机推荐5道不重复的菜
+  清空菜单 — 清空所有菜品
+  导出菜单 — 导出当前菜单为JSON
+  导入菜单 [JSON/文本] — 批量导入菜品
+cmd: what_to_eat
+pages:
+  - name: settings
+    title: 设置页面
+    description: 管理菜单、导入导出数据、自定义回复模板
