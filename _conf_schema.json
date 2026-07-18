@@ -61,5 +61,17 @@
     "type": "string",
     "default": "🍽️ 今日宴席菜单：{dishes}",
     "description": "开席回复模板，使用 {dishes} 占位符"
+  },
+  "init_from_default": {
+    "description": "初始化新会话菜单为默认菜单",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后，空菜单将自动继承默认菜单的菜品。保存配置时触发。"
+  },
+  "sync_default_to_all": {
+    "description": "默认菜单变更时同步至所有菜单",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后，对默认菜单的添加操作将同步至其他所有菜单。保存配置时触发。"
   }
 }

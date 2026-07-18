@@ -39,6 +39,14 @@ textarea { min-height: 80px; resize: vertical; }
 .scope-box input { width: 150px; margin-bottom: 0; }
 .scope-box .current-info { font-size: 12px; color: #888; margin-left: 10px; }
 [data-theme="dark"] .scope-box .current-info { color: #aaa; }
+.autocomplete-wrap { position: relative; display: inline-block; width: 150px; }
+.autocomplete-wrap input { width: 100%; margin-bottom: 0; }
+.autocomplete-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 0 0 6px 6px; max-height: 240px; overflow-y: auto; z-index: 1000; display: none; }
+.autocomplete-dropdown .item { padding: 8px 10px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--border); }
+.autocomplete-dropdown .item:last-child { border-bottom: none; }
+.autocomplete-dropdown .item:hover { background: #f0f0f0; }
+[data-theme="dark"] .autocomplete-dropdown .item:hover { background: #333; }
+.autocomplete-dropdown .item .highlight { font-weight: bold; color: var(--primary); }
 </style>
 </head>
 <body>
@@ -59,7 +67,10 @@ textarea { min-height: 80px; resize: vertical; }
             <option value="group">按群聊管理</option>
             <option value="private">按私聊管理</option>
         </select>
-        <input type="text" id="targetIdInput" placeholder="群号/用户ID" disabled>
+        <div class="autocomplete-wrap">
+            <input type="text" id="targetIdInput" placeholder="群号/用户ID" disabled autocomplete="off">
+            <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+        </div>
         <button class="btn btn-primary" id="btnLoad">加载</button>
     </div>
     
@@ -370,7 +381,54 @@ async function doFeast() {
     }
 }
 
+// -------- 自动补全：搜索已存在的群号/用户ID --------
+var searchTimer = null;
+
+function hideDropdown() {
+    document.getElementById('autocompleteDropdown').style.display = 'none';
+}
+
+function doSearch() {
+    var input = document.getElementById('targetIdInput');
+    var dropdown = document.getElementById('autocompleteDropdown');
+    var scope = document.getElementById('scopeSelect').value;
+
+    if (scope === 'default' || !input.value.trim()) {
+        hideDropdown();
+        return;
+    }
+
+    var q = input.value.trim();
+    log('[autocomplete] 搜索: scope=' + scope + ', q=' + q);
+
+    bridge.apiGet('menu/search_ids', { scope: scope, q: q }).then(function(data) {
+        var ids = data && data.ids ? data.ids : [];
+        log('[autocomplete] 匹配结果: ' + JSON.stringify(ids));
+
+        if (ids.length === 0) {
+            hideDropdown();
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < ids.length; i++) {
+            var id = escapeHtml(ids[i]);
+            var highlighted = id.replace(new RegExp(escapeRegex(q), 'gi'), function(m) { return '<span class="highlight">' + m + '</span>'; });
+            html += '<div class="item" data-id="' + id.replace(/"/g, '&quot;') + '">' + highlighted + '</div>';
+        }
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
+    }).catch(function(e) {
+        log('[autocomplete] 搜索失败: ' + e.message);
+    });
+}
+
+function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // 事件绑定
+
 document.getElementById('btnLoad').onclick = loadMenu;
 document.getElementById('btnAdd').onclick = doAdd;
 document.getElementById('btnClear').onclick = doClear;
@@ -383,6 +441,7 @@ document.getElementById('btnFeast').onclick = doFeast;
 document.getElementById('scopeSelect').onchange = function() {
     var scope = this.value;
     var targetInput = document.getElementById('targetIdInput');
+    hideDropdown();
     if (scope === 'default') {
         targetInput.disabled = true;
         targetInput.value = '';
@@ -393,7 +452,44 @@ document.getElementById('scopeSelect').onchange = function() {
 };
 
 document.getElementById('dishInput').onkeydown = function(e) { if (e.key === 'Enter') doAdd(); };
-document.getElementById('targetIdInput').onkeydown = function(e) { if (e.key === 'Enter') loadMenu(); };
+
+document.getElementById('targetIdInput').onkeydown = function(e) {
+    if (e.key === 'Enter') {
+        hideDropdown();
+        loadMenu();
+    }
+    if (e.key === 'Escape') {
+        hideDropdown();
+    }
+};
+
+document.getElementById('targetIdInput').oninput = function() {
+    if (searchTimer) { clearTimeout(searchTimer); }
+    searchTimer = setTimeout(doSearch, 250);
+};
+
+document.getElementById('targetIdInput').onfocus = function() {
+    if (this.value.trim()) {
+        doSearch();
+    }
+};
+
+document.getElementById('targetIdInput').onblur = function() {
+    // 延迟隐藏，让点击下拉项先触发
+    setTimeout(hideDropdown, 200);
+};
+
+document.getElementById('autocompleteDropdown').onclick = function(e) {
+    var item = e.target.closest('.item');
+    if (!item) return;
+    var id = item.getAttribute('data-id');
+    if (id) {
+        document.getElementById('targetIdInput').value = id;
+        hideDropdown();
+        log('[autocomplete] 选中: ' + id);
+        loadMenu();
+    }
+};
 
 document.getElementById('menuList').onclick = function(e) {
     if (e.target && e.target.classList.contains('del')) {

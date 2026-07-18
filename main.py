@@ -131,12 +131,13 @@ class MenuManager:
 class MenuStore:
     """按会话（群/私聊）管理独立菜单。"""
 
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, init_from_default: bool = False):
         self._data_dir = data_dir
         self._menus_dir = data_dir / "menus"
         self._menus_dir.mkdir(parents=True, exist_ok=True)
         self._cache: Dict[str, MenuManager] = {}
         self._default = MenuManager(str(self._menus_dir / "default.json"))
+        self._init_from_default = init_from_default
         self._migrate_legacy_menu()
 
     def _migrate_legacy_menu(self):
@@ -153,11 +154,21 @@ class MenuStore:
     def _get_or_create(self, key: str) -> MenuManager:
         if key not in self._cache:
             path = self._menus_dir / f"{key}.json"
-            if not path.exists():
+            is_new = not path.exists()
+            if is_new:
                 legacy = self._data_dir / "menu.json"
                 if legacy.exists():
                     shutil.copy(legacy, path)
+                    is_new = False
             self._cache[key] = MenuManager(str(path))
+            # 开关①：新会话空菜单自动继承默认菜单
+            if is_new and self._init_from_default and self._default.count() > 0:
+                self._cache[key].add(self._default.get_all())
+                logger.info("[what_to_eat] 新菜单 %s 已自动初始化为默认菜单", key)
+            elif is_new:
+                # 开关未开启，创建空菜单 JSON 文件
+                self._cache[key]._save()
+                logger.debug("[what_to_eat] 新菜单 %s 已创建为空菜单", key)
         return self._cache[key]
 
     def get_for_scope(self, scope: str, target_id: str = "") -> MenuManager:
@@ -183,6 +194,14 @@ class MenuStore:
     def get_for_event(self, event: AstrMessageEvent) -> MenuManager:
         return self.get_for_scope("group" if getattr(event.message_obj, "group_id", "") else "private", str(getattr(event.message_obj, "group_id", "") or event.get_session_id()))
 
+    def get_all_menu_keys(self) -> List[str]:
+        """返回所有非默认菜单文件名的 stem 列表。"""
+        keys = []
+        for f in self._menus_dir.iterdir():
+            if f.suffix == '.json' and f.stem != 'default':
+                keys.append(f.stem)
+        return keys
+
 
 def get_plugin_data_path() -> Path:
     from astrbot.core.utils.astrbot_path import get_astrbot_data_path
@@ -190,7 +209,7 @@ def get_plugin_data_path() -> Path:
     return Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
 
 
-@register(PLUGIN_NAME, "AI", "吃什么菜单插件", "1.2.0")
+@register(PLUGIN_NAME, "StarryLanMusic", "吃什么菜单插件", "1.3.0")
 class WhatToEatPlugin(Star):
     """AstrBot 插件封装，暴露 self.menu 给 AI Agent 调用。"""
 
@@ -199,7 +218,7 @@ class WhatToEatPlugin(Star):
         self.config = config
 
         data_dir = get_plugin_data_path()
-        self._menu_store = MenuStore(data_dir)
+        self._menu_store = MenuStore(data_dir, init_from_default=self._init_from_default_enabled())
         self.menu = self._menu_store.default
 
         self._banquet_history: Dict[str, List[float]] = {}
@@ -216,11 +235,43 @@ class WhatToEatPlugin(Star):
     def _feast_count(self) -> int:
         return int(self.config.get("feast_count", 5) or 5)
 
+    def _init_from_default_enabled(self) -> bool:
+        return bool(self.config.get("init_from_default", False))
+
+    def _sync_default_enabled(self) -> bool:
+        return bool(self.config.get("sync_default_to_all", False))
+
     def _banquet_rate_limit(self) -> int:
         return int(self.config.get("meal_banquet_count", 5) or 5)
 
     def _banquet_cooldown_minutes(self) -> int:
         return int(self.config.get("meal_banquet_cooldown_minutes", 5) or 5)
+
+    def _sync_empty_menus_from_default(self):
+        """遍历所有菜单文件，将空菜单初始化为默认菜单内容。"""
+        if not self._init_from_default_enabled():
+            return
+        default_dishes = self.menu.get_all()
+        if not default_dishes:
+            return
+        for key in self._menu_store.get_all_menu_keys():
+            mgr = self._menu_store._get_or_create(key)
+            if mgr.count() == 0:
+                mgr.add(default_dishes, max_items=self._max_items())
+                logger.info("[what_to_eat] 已初始化空菜单 %s 为默认菜单", key)
+
+    def _sync_default_to_all_menus(self):
+        """将默认菜单的菜品同步至所有其他菜单。"""
+        if not self._sync_default_enabled():
+            return
+        default_dishes = self.menu.get_all()
+        if not default_dishes:
+            return
+        for key in self._menu_store.get_all_menu_keys():
+            mgr = self._menu_store._get_or_create(key)
+            result = mgr.add(default_dishes, max_items=self._max_items())
+            if result["added"]:
+                logger.info("[what_to_eat] 已将默认菜单同步至 %s，新增 %d 道菜", key, len(result["added"]))
 
     def _keyword_list(self, key: str) -> List[str]:
         value = self.config.get(key, [])
@@ -292,6 +343,7 @@ class WhatToEatPlugin(Star):
             (f"/{PLUGIN_NAME}/config/save", self._api_save_config, ["POST"], "保存插件配置"),
             (f"/{PLUGIN_NAME}/menu/random", self._api_random_pick, ["GET"], "随机推荐菜品"),
             (f"/{PLUGIN_NAME}/log", self._api_log, ["POST"], "记录日志到AstrBot"),
+            (f"/{PLUGIN_NAME}/menu/search_ids", self._api_search_ids, ["GET"], "搜索已存在的群号/用户ID"),
         ]
         for path, handler, methods, desc in routes:
             ctx.register_web_api(path, handler, methods, desc)
@@ -355,6 +407,11 @@ class WhatToEatPlugin(Star):
         if isinstance(dishes, str):
             dishes = [dishes]
         result = menu.add(dishes, max_items=self._max_items())
+
+        # 如果操作的是默认菜单且启用了同步，同步至所有其他菜单
+        if result["added"] and self._sync_default_enabled() and menu is self.menu:
+            self._sync_default_to_all_menus()
+
         return jsonify(result)
 
     async def _api_delete_dish(self):
@@ -403,6 +460,8 @@ class WhatToEatPlugin(Star):
             "feast_count": self._feast_count(),
             "random_reply_template": self.config.get("random_reply_template", "今天吃{dish}喵~"),
             "feast_reply_template": self.config.get("feast_reply_template", "🍽️ 今日宴席菜单：{dishes}"),
+            "init_from_default": self._init_from_default_enabled(),
+            "sync_default_to_all": self._sync_default_enabled(),
         }
 
     async def _api_get_config(self):
@@ -422,11 +481,18 @@ class WhatToEatPlugin(Star):
             "feast_count",
             "random_reply_template",
             "feast_reply_template",
+            "init_from_default",
+            "sync_default_to_all",
         ]
         for key in allowed_keys:
             if key in payload:
                 self.config[key] = payload[key]
         self.config.save_config()
+
+        # 热重载：根据开关状态执行菜单同步
+        self._sync_empty_menus_from_default()
+        self._sync_default_to_all_menus()
+
         return jsonify({"success": True, "config": self._config_snapshot()})
 
     async def _api_random_pick(self):
@@ -438,6 +504,25 @@ class WhatToEatPlugin(Star):
             return jsonify({"dish": menu.random_one()})
         dishes = menu.random_n(min(count, feast_count))
         return jsonify({"dishes": dishes})
+
+    async def _api_search_ids(self):
+        """根据 scope 和 q 搜索已存在的群号/用户ID，最多返回 6 条匹配。"""
+        scope = (request.args.get("scope", "") or "").strip().lower()
+        q = (request.args.get("q", "") or "").strip().lower()
+
+        if scope not in ("group", "private") or not q:
+            return jsonify({"ids": []})
+
+        prefix = f"{scope}_"
+        matches = []
+        for f in self._menu_store._menus_dir.iterdir():
+            if f.suffix == '.json' and f.stem.startswith(prefix):
+                id_part = f.stem[len(prefix):]
+                if q in id_part.lower():
+                    matches.append(id_part)
+
+        matches.sort()
+        return jsonify({"ids": matches[:6]})
 
     async def _api_log(self):
         """记录来自前端的日志到 AstrBot logger。"""
@@ -487,6 +572,11 @@ class WhatToEatPlugin(Star):
             return
         dishes = [d.strip() for d in re.split(r"[,，]", args) if d.strip()]
         result = menu.add(dishes, max_items=max_items)
+
+        # 如果操作的是默认菜单且启用了同步，同步至所有其他菜单
+        if result["added"] and self._sync_default_enabled() and menu is self.menu:
+            self._sync_default_to_all_menus()
+
         lines = []
         if result["added"]:
             lines.append(
